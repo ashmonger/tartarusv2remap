@@ -1,0 +1,44 @@
+# This file is to remap the keys on the Razor Tartarus v2
+#
+# HellDivers2_profile
+#
+evdev:input:b0003v1532p022B*
+#
+# Top row
+ KEYBOARD_KEY_7001e=esc
+ KEYBOARD_KEY_7001f=0
+ KEYBOARD_KEY_70020=0
+ KEYBOARD_KEY_70021=0
+ KEYBOARD_KEY_70022=0
+#
+# Second row
+ KEYBOARD_KEY_7002b=0
+ KEYBOARD_KEY_70014=0
+ KEYBOARD_KEY_7001a=0
+ KEYBOARD_KEY_70008=a
+ KEYBOARD_KEY_70015=m
+#
+# Third row
+ KEYBOARD_KEY_70039=leftshift
+ KEYBOARD_KEY_70004=1
+ KEYBOARD_KEY_70016=2
+ KEYBOARD_KEY_70007=3
+ KEYBOARD_KEY_70009=space
+#
+# Fourth row
+ KEYBOARD_KEY_700e1=c
+ KEYBOARD_KEY_7001d=0
+ KEYBOARD_KEY_7001b=0
+ KEYBOARD_KEY_70006=0
+#
+# Thumb button above thumbstick
+ KEYBOARD_KEY_700e2=
+#
+# Thumbstick
+ KEYBOARD_KEY_70052=w
+ KEYBOARD_KEY_70051=s
+ KEYBOARD_KEY_70050=a
+ KEYBOARD_KEY_7004f=d
+#
+# Thumb button below thumbstick
+ KEYBOARD_KEY_7002c=r
