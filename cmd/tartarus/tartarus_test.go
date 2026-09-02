@@ -90,8 +90,8 @@ func TestRenderKeydBindsEveryInput(t *testing.T) {
 	if got := strings.Count(out, " = "); got != 25 {
 		t.Errorf("expected 25 bindings in the config, got %d", got)
 	}
-	if !strings.Contains(out, "[ids]\n1532:022b") {
-		t.Error("config does not claim the keypad")
+	if !strings.Contains(out, "[ids]\nk:1532:022b") {
+		t.Error("config does not claim the keypad's keyboard interfaces")
 	}
 	if !strings.Contains(out, "noop") {
 		t.Error("unbound keys should compile to noop")
@@ -577,5 +577,34 @@ func TestNewResolvesExtendsFromAnotherDirectory(t *testing.T) {
 	}
 	if p.Bindings["k01"] != "esc" {
 		t.Errorf("packaged default's bindings were not inherited: %v", p.Bindings)
+	}
+}
+
+func TestKeydClaimsOnlyKeyboardInterfaces(t *testing.T) {
+	// Observed on hardware: the keypad exposes two keyboard interfaces and a
+	// mouse interface carrying the scroll wheel, all under 1532:022b. A bare
+	// id would hand keyd the mouse as well.
+	p, err := LoadProfile("diablo4", profileDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderKeyd(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[ids]\nk:1532:022b") {
+		t.Errorf("expected the id to be limited to keyboards:\n%s", out)
+	}
+
+	for _, tc := range []struct{ in, want string }{
+		{"1532:022b", "k:1532:022b"},
+		{"k:1532:022b", "k:1532:022b"}, // already restricted, leave alone
+		{"m:1532:022b", "m:1532:022b"},
+		{"*", "*"},
+		{"-1532:022b", "-1532:022b"}, // an exclusion
+	} {
+		if got := keydDeviceID(tc.in); got != tc.want {
+			t.Errorf("keydDeviceID(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
