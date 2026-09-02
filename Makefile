@@ -22,7 +22,9 @@ DEB     := $(BUILD)/$(PKG)_$(VERSION)-$(REVISION)_$(ARCH).deb
 # Build identity, so a binary can say which source it came from. The commit
 # date is used rather than the build time, so the same commit builds identically.
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-DIRTY       := $(shell git diff --quiet HEAD 2>/dev/null || echo +dirty)
+# Scoped to what actually goes into the binary and the package, so +dirty means
+# "built from modified sources" rather than "some unrelated file changed".
+DIRTY       := $(shell git diff --quiet HEAD -- cmd go.mod go.sum profiles packaging Makefile 2>/dev/null || echo +dirty)
 COMMIT_DATE ?= $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
 
 # A static binary keeps the package dependency-free.
