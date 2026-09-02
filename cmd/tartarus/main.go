@@ -24,6 +24,7 @@ usage: tartarus [flags] <command> [profile]
   check             validate every profile
   keys [PATTERN]    list the keyboard keys a profile may use
   import FILE.map   convert an old udev .map file into a profile
+  version           print the build, the keyd it found, and the profiles in scope
 
 flags:
   --profiles DIR    directory holding *.profile files
@@ -61,6 +62,8 @@ func main() {
 	fs.StringVar(&newFrom, "from", "", "for new: start from a copy of this profile")
 	fs.StringVar(&newName, "name", "", "for new: the readable name")
 	fs.BoolVar(&newNoEdit, "no-edit", false, "for new: do not open the editor")
+	var showVersion bool
+	fs.BoolVar(&showVersion, "version", false, "print the build and exit")
 
 	// Parse repeatedly, peeling off one positional at a time, so a flag is
 	// honoured wherever it appears: `new bg3 --from diablo4` reads the same as
@@ -82,11 +85,15 @@ func main() {
 		args = append(args, rest[0])
 		remaining = rest[1:]
 	}
+	profilesExplicit = profilesDir != ""
+	if showVersion {
+		printVersion(ProfileDirs(profilesDir))
+		os.Exit(0)
+	}
 	if len(args) == 0 {
 		fs.Usage()
 		os.Exit(2)
 	}
-	profilesExplicit = profilesDir != ""
 	dirs := ProfileDirs(profilesDir)
 
 	if err := run(args, dirs, dryRun); err != nil {
@@ -136,6 +143,9 @@ func run(args []string, dirs []string, dryRun bool) error {
 		return cmdKeys(arg)
 	case "import":
 		return cmdImport(arg)
+	case "version":
+		printVersion(dirs)
+		return nil
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}

@@ -18,7 +18,15 @@ step "unit tests"
 go test ./... ; ok $?
 
 step "build"
-CGO_ENABLED=0 go build -trimpath -o tartarus ./cmd/tartarus ; ok $?
+# Via make, so the binary carries the same build stamp a release does.
+make build >/dev/null ; ok $?
+
+step "version reports the build"
+v=0
+./tartarus version | grep -q '^tartarus ' || v=1
+./tartarus version | grep -q 'commit ' || v=1
+./tartarus --version >/dev/null 2>&1 || v=1
+ok $v
 
 step "the generated key table still matches the kernel header"
 ./tests/verify_keys.py ; ok $?

@@ -127,7 +127,25 @@ func ProfileDirs(override string) []string {
 		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "profiles"))
 	}
 	dirs = append(dirs, AdminProfileDir, SystemProfileDir, "profiles")
-	return dirs
+	return dedupe(dirs)
+}
+
+// dedupe drops repeated directories, which happen easily: running from a build
+// tree with TARTARUS_PROFILES pointing at it names the same place twice.
+func dedupe(dirs []string) []string {
+	seen := make(map[string]bool, len(dirs))
+	out := dirs[:0:0]
+	for _, dir := range dirs {
+		key := dir
+		if abs, err := filepath.Abs(dir); err == nil {
+			key = abs
+		}
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, dir)
+		}
+	}
+	return out
 }
 
 // UserProfileDir is where a profile is written when no directory was named.

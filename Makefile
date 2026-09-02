@@ -19,9 +19,18 @@ BUILD   := build
 STAGE   := $(BUILD)/$(PKG)_$(VERSION)-$(REVISION)_$(ARCH)
 DEB     := $(BUILD)/$(PKG)_$(VERSION)-$(REVISION)_$(ARCH).deb
 
+# Build identity, so a binary can say which source it came from. The commit
+# date is used rather than the build time, so the same commit builds identically.
+COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+DIRTY       := $(shell git diff --quiet HEAD 2>/dev/null || echo +dirty)
+COMMIT_DATE ?= $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
+
 # A static binary keeps the package dependency-free.
 GOFLAGS_BUILD := -trimpath
-LDFLAGS := -s -w -X main.version=$(VERSION)
+LDFLAGS := -s -w \
+	-X main.version=$(VERSION) \
+	-X main.commit=$(COMMIT)$(DIRTY) \
+	-X main.commitDate=$(COMMIT_DATE)
 
 .PHONY: all build test vet fmt check verify-keys deb clean install uninstall
 

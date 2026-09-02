@@ -47,6 +47,7 @@ export TARTARUS_PROFILES="$PWD/profiles"
 ## Use
 
 ```bash
+tartarus version               # which build is this, and what can it see
 tartarus new eldenring          # create a profile and start binding
 tartarus edit diablo4           # the keypad editor
 tartarus list                   # profiles, active one marked
@@ -84,6 +85,40 @@ done
 
 `sudo python3 tests/verify_layout.py --stock` confirms it worked: all 25 inputs should
 report their stock keys.
+
+### Which build am I running
+
+```
+$ tartarus version
+tartarus 0.1.0
+  commit     7b37e27
+  committed  2026-09-02T17:01:08+02:00
+  go         go1.26.1
+  keyd       /usr/bin/keyd (no `check` subcommand)
+  active     phasmophobia
+  profiles   7 found
+```
+
+The commit answers "is this the copy I just installed", which is otherwise guesswork when
+moving a build between machines; a `+dirty` suffix means it was built from a modified tree.
+The rest is there because the problems worth debugging have come down to which keyd was
+found and which profiles were in scope.
+
+### A note on modifiers
+
+keyd warns when a key is bound directly to a modifier, as in `k11 = leftshift`:
+
+```
+WARNING: You should use layer(shift) instead of assigning to leftshift directly.
+```
+
+The binding works — the modifier reaches the game — and the warning is kept rather than
+hidden. To follow keyd's advice instead, write the action in the profile, since anything
+that is not a plain key name or `off` is passed to keyd unchanged:
+
+```ini
+k11 = layer(shift)
+```
 
 ### keyd versions
 

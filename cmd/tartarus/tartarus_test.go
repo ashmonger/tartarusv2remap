@@ -27,6 +27,23 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
+// TestMain points HOME and XDG_CONFIG_HOME at a throwaway directory for the
+// whole test binary. An earlier version of these tests created a profile in the
+// developer's real ~/.config/tartarus/profiles, which is nobody's idea of a
+// test fixture. Individual tests still override these as needed.
+func TestMain(m *testing.M) {
+	home, err := os.MkdirTemp("", "tartarus-test-home-*")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("HOME", home)
+	os.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	os.Unsetenv("TARTARUS_PROFILES")
+	code := m.Run()
+	os.RemoveAll(home)
+	os.Exit(code)
+}
+
 func profileDir(t *testing.T) []string {
 	t.Helper()
 	return []string{filepath.Join(repoRoot(t), "profiles")}
