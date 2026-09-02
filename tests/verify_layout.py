@@ -27,6 +27,7 @@ import struct
 import sys
 import time
 
+VERSION = "2"
 VENDOR, PRODUCT = "1532", "022b"
 EVIOCGRAB = 0x40044590
 EV_KEY = 0x01
@@ -223,7 +224,25 @@ def main():
     mode = "stock" if args.stock else "installed"
     what, expected = build_expectations(mode)
 
-    print("Razer Tartarus V2 layout check")
+    installed = [p for p in (KEYD_PATH, HWDB_PATH) if os.path.exists(p)]
+    if args.stock and installed:
+        print("REFUSING: --stock compares against an unmapped keypad, but a mapping")
+        print("is installed, so the keypad is not at stock:")
+        for path in installed:
+            print(f"  {path}")
+        print()
+        print("Every key would report a mismatch, which would say nothing about the")
+        print("layout table. Either drop --stock to compare against what is installed,")
+        print("or remove the mapping first:")
+        if HWDB_PATH in installed:
+            print(f"  sudo rm {HWDB_PATH}")
+            print("  sudo systemd-hwdb update")
+            print("  sudo udevadm trigger --action=change --subsystem-match=input")
+        if KEYD_PATH in installed:
+            print("  tartarus off")
+        sys.exit(1)
+
+    print(f"Razer Tartarus V2 layout check (script v{VERSION})")
     print()
     print("installed mappings:")
     for path in (KEYD_PATH, HWDB_PATH):

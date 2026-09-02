@@ -2,12 +2,27 @@
 # Point the user at what they need, without touching their configuration.
 set -e
 
+# keyd's own Makefile installs to /usr/local/bin, which is not on the PATH
+# maintainer scripts are given, so PATH alone would report it missing.
+keyd_present() {
+    command -v keyd >/dev/null 2>&1 && return 0
+    systemctl show keyd.service -p ExecStart --value 2>/dev/null \
+        | grep -q 'path=' && return 0
+    for p in /usr/local/bin/keyd /usr/bin/keyd /usr/sbin/keyd \
+             /usr/local/sbin/keyd /opt/keyd/bin/keyd; do
+        [ -x "$p" ] && return 0
+    done
+    return 1
+}
+
 case "$1" in
     configure)
-        if ! command -v keyd >/dev/null 2>&1; then
-            echo "tartarus: keyd is not installed. Profiles can be written and"
+        if ! keyd_present; then
+            echo "tartarus: keyd was not found. Profiles can be written and"
             echo "          inspected, but 'tartarus apply' needs it:"
             echo "            apt install keyd"
+            echo "          If it is installed somewhere unusual, set"
+            echo "            TARTARUS_KEYD=/path/to/keyd"
         fi
         ;;
 esac

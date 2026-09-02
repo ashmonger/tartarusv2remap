@@ -138,11 +138,14 @@ func Apply(p *Profile, dryRun bool) error {
 		return err
 	}
 
-	if _, err := exec.LookPath("keyd"); err != nil {
+	if keydBinary == "" {
 		if !dryRun {
-			return fmt.Errorf("keyd is not installed; install it first")
+			return fmt.Errorf(
+				"cannot find the keyd binary. It is not on PATH, systemd does not " +
+					"report a keyd.service, and it is not in the usual places. Set " +
+					"TARTARUS_KEYD=/path/to/keyd if it lives somewhere else")
 		}
-		fmt.Fprintln(os.Stderr, "note: keyd is not installed (dry run, continuing)")
+		fmt.Fprintln(os.Stderr, "note: keyd not found (dry run, continuing)")
 	}
 	if _, err := os.Stat(hwdbConf); err == nil {
 		fmt.Fprintf(os.Stderr,
@@ -175,11 +178,11 @@ func Apply(p *Profile, dryRun bool) error {
 		} else {
 			_ = os.Remove(keydConf)
 		}
-		_ = exec.Command("keyd", "reload").Run()
+		_ = keyd("reload").Run()
 	}
 
 	if keydSupportsCheck() {
-		if out, err := exec.Command("keyd", "check", keydConf).CombinedOutput(); err != nil {
+		if out, err := keyd("check", keydConf).CombinedOutput(); err != nil {
 			restore()
 			return fmt.Errorf("keyd rejected the config (previous one restored):\n%s", strings.TrimSpace(string(out)))
 		}
@@ -188,7 +191,7 @@ func Apply(p *Profile, dryRun bool) error {
 			"note: this keyd has no `check` subcommand, so the config is not validated "+
 				"before loading; a failed reload still restores the previous one")
 	}
-	if out, err := exec.Command("keyd", "reload").CombinedOutput(); err != nil {
+	if out, err := keyd("reload").CombinedOutput(); err != nil {
 		restore()
 		return fmt.Errorf("keyd reload failed (previous config restored):\n%s", strings.TrimSpace(string(out)))
 	}
@@ -199,7 +202,7 @@ func Apply(p *Profile, dryRun bool) error {
 // Config linting was added part-way through keyd's history, and older releases
 // are still in use, so its absence must not look like a broken config.
 func keydSupportsCheck() bool {
-	out, _ := exec.Command("keyd", "--help").CombinedOutput()
+	out, _ := keyd("--help").CombinedOutput()
 	return strings.Contains(string(out), "check")
 }
 
@@ -216,8 +219,8 @@ func Off(dryRun bool) error {
 	if err := os.Remove(keydConf); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("keyd"); err == nil {
-		if out, err := exec.Command("keyd", "reload").CombinedOutput(); err != nil {
+	if keydBinary != "" {
+		if out, err := keyd("reload").CombinedOutput(); err != nil {
 			return fmt.Errorf("keyd reload failed:\n%s", strings.TrimSpace(string(out)))
 		}
 	}
