@@ -27,7 +27,7 @@ import struct
 import sys
 import time
 
-VERSION = "2"
+VERSION = "3"
 VENDOR, PRODUCT = "1532", "022b"
 EVIOCGRAB = 0x40044590
 EV_KEY = 0x01
@@ -333,6 +333,32 @@ def report(results, expected, what, args):
         print(f"  {source}  ({n} presses)")
     if len(sources) > 1:
         print("  more than one interface emits keys; keyd should claim all of them")
+
+    # A stock comparison that matches nothing, with no mapping installed, means
+    # the kernel is still holding a keymap a previous mapping wrote.
+    if not args.report and not args.stock:
+        pass
+    if args.stock and results:
+        matched = sum(1 for l, c, _ in results if c == expected.get(l, -1))
+        if matched == 0 and not any(os.path.exists(p) for p in (KEYD_PATH, HWDB_PATH)):
+            print()
+            print("NOTE: no mapping is installed, yet nothing matches the stock layout.")
+            print("The kernel still holds the keycode table a previous hwdb mapping wrote.")
+            print("udev's keyboard builtin only ever sets the keys a mapping names; removing")
+            print("the file resets nothing, so the device keeps that table until it is")
+            print("re-created. Unplug and replug the keypad, or rebind it without the cable:")
+            print()
+            print("  for d in /sys/bus/usb/devices/*/idProduct; do \\")
+            print("    dev=$(dirname \"$d\"); \\")
+            print("    [ \"$(cat \"$d\")\" = 022b ] && [ \"$(cat \"$dev/idVendor\")\" = 1532 ] || continue; \\")
+            print("    port=$(basename \"$dev\"); \\")
+            print("    echo \"$port\" | sudo tee /sys/bus/usb/drivers/usb/unbind; sleep 1; \\")
+            print("    echo \"$port\" | sudo tee /sys/bus/usb/drivers/usb/bind; \\")
+            print("  done")
+            print()
+            print("This matters before using keyd: keyd matches on what the device sends,")
+            print("so a config keyed on the stock names cannot match a device still")
+            print("carrying an hwdb remap.")
 
     zeros = [l for l, c, _ in results if c == 11]
     if zeros:

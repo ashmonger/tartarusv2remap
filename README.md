@@ -57,6 +57,34 @@ tartarus keys shift             # search the 138 bindable keyboard keys
 tartarus --dry-run apply hd2    # exactly what apply would write and run
 ```
 
+### Migrating off the udev mapping
+
+If a `.map` was ever applied through the old script, removing
+`/etc/udev/hwdb.d/99-tartarus_v2.hwdb` is not enough. udev's keyboard builtin applies a
+mapping by writing the device's in-kernel keycode table, and only ever sets the keys the
+mapping names — nothing resets them. The keypad keeps that table until the input device is
+re-created.
+
+That has to be done before using keyd, because **keyd matches on what the device sends**.
+While the kernel still holds an hwdb remap, a profile keyed on the stock key names cannot
+match.
+
+```bash
+sudo rm /etc/udev/hwdb.d/99-tartarus_v2.hwdb
+sudo systemd-hwdb update
+# then unplug and replug the keypad, or rebind it in place:
+for d in /sys/bus/usb/devices/*/idProduct; do
+  dev=$(dirname "$d")
+  [ "$(cat "$d")" = 022b ] && [ "$(cat "$dev/idVendor")" = 1532 ] || continue
+  port=$(basename "$dev")
+  echo "$port" | sudo tee /sys/bus/usb/drivers/usb/unbind; sleep 1
+  echo "$port" | sudo tee /sys/bus/usb/drivers/usb/bind
+done
+```
+
+`sudo python3 tests/verify_layout.py --stock` confirms it worked: all 25 inputs should
+report their stock keys.
+
 ### keyd versions
 
 `[ids]` is written as a bare `1532:022b`, which every keyd version accepts. The keypad

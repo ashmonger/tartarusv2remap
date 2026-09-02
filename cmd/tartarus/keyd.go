@@ -149,8 +149,12 @@ func Apply(p *Profile, dryRun bool) error {
 	}
 	if _, err := os.Stat(hwdbConf); err == nil {
 		fmt.Fprintf(os.Stderr,
-			"warning: %s is still installed. It remaps the keypad before keyd sees it,\n"+
-				"         so the two compose. Remove it and run `systemd-hwdb update`.\n", hwdbConf)
+			"warning: %s is still installed. It remaps the keypad in the kernel before\n"+
+				"         keyd sees it, and keyd matches on what the device sends, so a\n"+
+				"         profile keyed on the stock names will not match. Remove it, run\n"+
+				"         `systemd-hwdb update`, then unplug and replug the keypad:\n"+
+				"         deleting the file does not reset the keycode table already\n"+
+				"         written to the device.\n", hwdbConf)
 	}
 	for _, clash := range conflictingConfigs(p.Device) {
 		fmt.Fprintf(os.Stderr, "warning: %s also claims %s; keyd allows a device in only one config\n",
