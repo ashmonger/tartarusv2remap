@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -200,9 +201,26 @@ func Apply(p *Profile, dryRun bool) error {
 			"note: this keyd has no `check` subcommand, so the config is not validated "+
 				"before loading; a failed reload still restores the previous one")
 	}
+	reloadedAt := time.Now()
 	if out, err := keyd("reload").CombinedOutput(); err != nil {
 		restore()
 		return fmt.Errorf("keyd reload failed (previous config restored):\n%s", strings.TrimSpace(string(out)))
+	}
+
+	// A reload can succeed while keyd rejects every binding in the file, which
+	// leaves a config that is matched and inert. Where keyd could not be asked
+	// to validate up front, its log is read afterwards instead.
+	time.Sleep(400 * time.Millisecond) // let the daemon finish logging
+	errors, warnings := keydErrorsSince(reloadedAt)
+	for _, warning := range warnings {
+		fmt.Fprintln(os.Stderr, "keyd: "+warning)
+	}
+	if len(errors) > 0 {
+		restore()
+		return fmt.Errorf(
+			"keyd rejected part of the config, so the previous one was restored:\n%s\n"+
+				"This keyd cannot validate a config before loading it, so the failure "+
+				"only shows in its log.", summarise(errors, 8))
 	}
 	return nil
 }

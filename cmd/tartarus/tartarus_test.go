@@ -723,3 +723,32 @@ func TestImportRejectsAFileWithNoBindings(t *testing.T) {
 		t.Error("expected an error for a .map with no KEYBOARD_KEY_ lines")
 	}
 }
+
+func TestSummariseKeepsLongErrorListsReadable(t *testing.T) {
+	// keyd reported 25 near-identical parse errors for one bad config; dumping
+	// them all helps nobody.
+	var many []string
+	for i := 9; i <= 33; i++ {
+		many = append(many, "ERROR: line "+itoa(i)+": invalid key or action")
+	}
+	got := summarise(many, 8)
+	if strings.Count(got, "\n") != 8 {
+		t.Errorf("expected 8 lines plus a tail, got:\n%s", got)
+	}
+	if !strings.Contains(got, "and 17 more") {
+		t.Errorf("expected a count of what was elided, got:\n%s", got)
+	}
+	// A short list is shown in full, with no tail.
+	short := summarise([]string{"ERROR: a", "ERROR: b"}, 8)
+	if strings.Contains(short, "more") {
+		t.Errorf("a short list should not be elided: %q", short)
+	}
+	for _, tc := range []struct {
+		in   int
+		want string
+	}{{0, "0"}, {7, "7"}, {17, "17"}, {103, "103"}} {
+		if got := itoa(tc.in); got != tc.want {
+			t.Errorf("itoa(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

@@ -102,8 +102,14 @@ device = 1532:022b:fab63040   # one specific interface, keyd 2.5 and later
 says is passed through unchanged.
 
 `tartarus apply` runs `keyd check` before loading a config, but that subcommand was added
-part-way through keyd's history; where it is missing, the step is skipped with a note and
-a failed `keyd reload` still restores the previous config.
+part-way through keyd's history. Where it is missing, the step is skipped with a note and
+keyd's log is read after the reload instead: a reload can report success while keyd
+rejects every binding in the file, leaving a config that is matched and completely inert.
+Errors found that way restore the previous config; warnings are printed and kept.
+
+Note that a bare `1532:022b` matches every interface the keypad exposes, including the
+mouse. The three-part ids keyd prints are per-interface but not stable across a replug, so
+they are only useful for pinning on a machine that stays plugged in.
 
 Only `apply` and `off` need root, and they re-run under `sudo` after the profile has
 compiled, so a mistake never costs a password prompt. `--dry-run` never escalates.
