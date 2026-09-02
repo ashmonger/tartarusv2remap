@@ -52,17 +52,9 @@ jobs:
         run: make check
 
   build:
-    name: Build ${{ matrix.goarch }}
+    name: Build
     runs-on: ubuntu-latest
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goarch: amd64
-            debarch: amd64
-          - goarch: arm64
-            debarch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -72,16 +64,13 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Build
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
         run: |
           make build
           file tartarus
 
       - name: Check the binary is static
         run: |
-          # A dynamic binary would add runtime dependencies the package does
+          # A dynamic binary would need runtime dependencies the package does
           # not declare.
           if file tartarus | grep -q "dynamically linked"; then
             echo "the binary is dynamically linked; the package declares no dependencies"
@@ -89,7 +78,6 @@ jobs:
           fi
 
       - name: Smoke test the binary
-        if: matrix.goarch == 'amd64'
         run: |
           export TARTARUS_PROFILES="$PWD/profiles"
           ./tartarus --help
@@ -99,10 +87,7 @@ jobs:
           ./tartarus --dry-run apply diablo4
 
       - name: Build the Debian package
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-        run: make deb ARCH=${{ matrix.debarch }}
+        run: make deb
 
       - name: Verify the package contents
         run: |
@@ -128,26 +113,40 @@ jobs:
           test -f "$root/usr/share/doc/tartarus-remap/changelog.Debian.gz"
 
       - name: Install the package and use it
-        if: matrix.debarch == 'amd64'
         run: |
-          sudo apt-get install -y ./build/*.deb
-          # No TARTARUS_PROFILES: this proves the installed binary finds the
-          # profiles the package shipped.
-          tartarus list
-          tartarus show diablo4
-          tartarus compile hd2
-          tartarus status
-          # A fresh profile must land in the user's config, never in the
-          # package's directory.
+          # --no-install-recommends: keyd is a Recommends, and it is not in
+          # every archive. The tool is exercised here without it; applying a
+          # profile is the only thing that needs keyd.
+          sudo apt-get install -y --no-install-recommends ./build/*.deb
+          dpkg -l tartarus-remap
+
+          # No TARTARUS_PROFILES set: this is what proves the installed binary
+          # finds the profiles the package shipped.
+          echo "--- list"   && tartarus list
+          echo "--- show"   && tartarus show diablo4
+          echo "--- compile" && tartarus compile hd2 >/dev/null && echo "compiled"
+          echo "--- status" && tartarus status
+
+          # A new profile must land in the user's config, and must resolve
+          # `extends = default` from the packaged profile under /usr/share.
+          echo "--- new"
+          cd "$HOME"          # deliberately away from the checkout
           tartarus new citest --no-edit
-          test -f "$HOME/.config/tartarus/profiles/citest.profile"
-          ! test -f /usr/share/tartarus/profiles/citest.profile
+          created="$HOME/.config/tartarus/profiles/citest.profile"
+          if [ ! -f "$created" ]; then
+            echo "expected $created; found:"
+            find "$HOME/.config" -name '*.profile' 2>/dev/null
+            exit 1
+          fi
+          grep -q 'extends = default' "$created"
+          test ! -f /usr/share/tartarus/profiles/citest.profile
           tartarus list | grep citest
+
           sudo apt-get remove -y tartarus-remap
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tartarus-${{ matrix.debarch }}
+          name: tartarus-amd64
           path: |
             build/*.deb
             tartarus
