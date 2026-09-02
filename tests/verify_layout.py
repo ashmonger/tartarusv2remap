@@ -27,7 +27,7 @@ import struct
 import sys
 import time
 
-VERSION = "3"
+VERSION = "4"
 VENDOR, PRODUCT = "1532", "022b"
 EVIOCGRAB = 0x40044590
 EV_KEY = 0x01
@@ -158,6 +158,38 @@ def build_expectations(mode):
     return "the keypad's stock layout", {l: c for l, _, c, _, _ in WALK}
 
 
+def keyd_virtual_device():
+    """keyd's virtual keyboard, which carries what keyd emits.
+
+    Preferred by name, but any keyd device that reports keys and is not the
+    pointer will do, since the exact name has changed across releases.
+    """
+    preferred, fallback = None, None
+    for block in open("/proc/bus/input/devices").read().split("\n\n"):
+        name = re.search(r'N: Name="([^"]*)"', block)
+        handlers = re.search(r"H: Handlers=(.*)", block)
+        if not name or not handlers:
+            continue
+        label = name.group(1)
+        lowered = label.lower()
+        if "keyd" not in lowered or "pointer" in lowered or "mouse" in lowered:
+            continue
+        if "B: KEY=" not in block:
+            continue
+        path = None
+        for token in handlers.group(1).split():
+            if token.startswith("event"):
+                path = f"/dev/input/{token}"
+                break
+        if path is None:
+            continue
+        if "virtual keyboard" in lowered:
+            preferred = (path, label)
+        elif fallback is None:
+            fallback = (path, label)
+    return preferred or fallback
+
+
 def keypad_devices():
     """(path, name) for each keypad event device that can report keys."""
     found = []
@@ -174,6 +206,54 @@ def keypad_devices():
             if token.startswith("event"):
                 found.append((f"/dev/input/{token}", name.group(1) if name else token))
     return found
+
+
+class StdinSink:
+    """Swallow keystrokes so they do not land in the shell.
+
+    Grabbing is not an option when reading keyd's virtual device: keyd may be
+    routing other keyboards through it, and grabbing would take those too. So
+    the terminal is put in non-canonical no-echo mode and stdin is drained.
+    Interrupt characters keep working, so Ctrl-C still aborts.
+    """
+
+    def __init__(self):
+        self.fd = None
+        self.saved = None
+
+    def __enter__(self):
+        try:
+            import termios
+            import tty
+
+            self.fd = sys.stdin.fileno()
+            self.saved = termios.tcgetattr(self.fd)
+            mode = termios.tcgetattr(self.fd)
+            # Non-canonical, no echo, but leave ISIG alone so Ctrl-C works.
+            mode[3] &= ~(termios.ICANON | termios.ECHO)
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, mode)
+        except Exception:
+            self.fd = None
+        return self
+
+    def drain(self):
+        if self.fd is None:
+            return
+        while select.select([self.fd], [], [], 0)[0]:
+            try:
+                if not os.read(self.fd, 4096):
+                    return
+            except OSError:
+                return
+
+    def __exit__(self, *_):
+        if self.fd is not None and self.saved is not None:
+            try:
+                import termios
+
+                termios.tcsetattr(self.fd, termios.TCSADRAIN, self.saved)
+            except Exception:
+                pass
 
 
 def wait_for_press(fds, timeout):
@@ -217,9 +297,14 @@ def main():
     if os.geteuid() != 0:
         sys.exit(f"this needs root to read /dev/input/event*:  sudo python3 {sys.argv[0]}")
 
-    devices = keypad_devices()
-    if not devices:
+    if not keypad_devices():
         sys.exit(f"no Razer Tartarus V2 ({VENDOR}:{PRODUCT}) found. Is it plugged in?")
+
+    # While keyd is active it holds an exclusive grab on the keypad and re-emits
+    # everything through its own virtual device, so that is what has to be read.
+    virtual = keyd_virtual_device()
+    reading_keyd = os.path.exists(KEYD_PATH) and virtual is not None
+    devices = [virtual] if reading_keyd else keypad_devices()
 
     mode = "stock" if args.stock else "installed"
     what, expected = build_expectations(mode)
@@ -264,32 +349,43 @@ def main():
     for _, path, name in opened:
         print(f"  {path}  {name}")
     print()
-    print(f"Press each key as prompted. A key that stays quiet for {args.timeout:.0f}s is")
-    print("recorded as silent, which is correct for an unbound key.")
-    print("The keypad is grabbed, so its keys will not type here. Ctrl-C aborts.")
+    if reading_keyd:
+        print("keyd is active and holds the keypad, so this reads what keyd emits.")
+        print("Keystrokes are absorbed rather than grabbed, since keyd may be routing")
+        print("other keyboards through the same device.")
+    else:
+        print("The keypad is grabbed, so its keys will not type here.")
+    print(f"Press each key as prompted. A key quiet for {args.timeout:.0f}s is recorded as")
+    print("silent, which is correct for an unbound key. Ctrl-C aborts.")
     print()
 
     fds = [fd for fd, _, _ in opened]
     path_of = {fd: path for fd, path, _ in opened}
     grabbed, results = [], []
+    sink = StdinSink()
     try:
-        for fd, path, _ in opened:
-            try:
-                fcntl.ioctl(fd, EVIOCGRAB, 1)
-                grabbed.append(fd)
-            except OSError as exc:
-                print(f"note: could not grab {path}: {exc}", file=sys.stderr)
-
-        for label, _, _, _, where in WALK:
-            print(f"  {label:<10} press: {where:<42}", end="", flush=True)
-            got = wait_for_press(fds, args.timeout)
-            code, source = (None, None) if got is None else (got[0], path_of[got[1]])
-            verdict = ""
-            if not args.report:
-                want = expected.get(label, -1)
-                verdict = "  ok" if code == want else f"  DIFFERS (expected {name_of(want)})"
-            print(f"  -> {name_of(code):<12}{verdict}")
-            results.append((label, code, source))
+        if not reading_keyd:
+            for fd, path, _ in opened:
+                try:
+                    fcntl.ioctl(fd, EVIOCGRAB, 1)
+                    grabbed.append(fd)
+                except OSError as exc:
+                    print(f"note: could not grab {path}: {exc}", file=sys.stderr)
+                    print("      something else holds this device; if that is keyd, run",
+                          file=sys.stderr)
+                    print("      `tartarus off` first or drop --stock.", file=sys.stderr)
+        with sink:
+            for label, _, _, _, where in WALK:
+                print(f"  {label:<10} press: {where:<42}", end="", flush=True)
+                got = wait_for_press(fds, args.timeout)
+                sink.drain()
+                code, source = (None, None) if got is None else (got[0], path_of[got[1]])
+                verdict = ""
+                if not args.report:
+                    want = expected.get(label, -1)
+                    verdict = "  ok" if code == want else f"  DIFFERS (expected {name_of(want)})"
+                print(f"  -> {name_of(code):<12}{verdict}")
+                results.append((label, code, source))
     except KeyboardInterrupt:
         print("\naborted")
     finally:
