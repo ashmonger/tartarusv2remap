@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 const usage = `tartarus — remap a Razer Tartarus V2 keypad per game, through keyd
@@ -25,6 +26,7 @@ usage: tartarus [flags] <command> [profile]
   keys [PATTERN]    list the keyboard keys a profile may use
   import FILE.map   convert an old udev .map file into a profile
   version           print the build, the keyd it found, and the profiles in scope
+  verify [PROFILE]  press each key and check it against the profile (needs root)
 
 flags:
   --profiles DIR    directory holding *.profile files
@@ -32,6 +34,8 @@ flags:
   --from PROFILE    for new: start from a copy of this profile
   --name NAME       for new: the readable name (defaults to the slug)
   --no-edit         for new: just write the file, do not open the editor
+  --stock           for verify: compare against the keypad's stock layout
+  --timeout SECS    for verify: seconds to wait per key (default 8)
 
 examples:
   tartarus new eldenring                 a fresh profile, extending default
@@ -46,6 +50,8 @@ var (
 	newName          string
 	newNoEdit        bool
 	profilesExplicit bool
+	verifyStock      bool
+	verifyTimeout    float64
 )
 
 func main() {
@@ -64,6 +70,8 @@ func main() {
 	fs.BoolVar(&newNoEdit, "no-edit", false, "for new: do not open the editor")
 	var showVersion bool
 	fs.BoolVar(&showVersion, "version", false, "print the build and exit")
+	fs.BoolVar(&verifyStock, "stock", false, "for verify: compare against the stock layout")
+	fs.Float64Var(&verifyTimeout, "timeout", 8, "for verify: seconds to wait per key")
 
 	// Parse repeatedly, peeling off one positional at a time, so a flag is
 	// honoured wherever it appears: `new bg3 --from diablo4` reads the same as
@@ -146,6 +154,8 @@ func run(args []string, dirs []string, dryRun bool) error {
 	case "version":
 		printVersion(dirs)
 		return nil
+	case "verify":
+		return cmdVerify(arg, dirs, verifyStock, time.Duration(verifyTimeout*1000)*time.Millisecond)
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}

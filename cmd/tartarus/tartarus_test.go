@@ -769,3 +769,80 @@ func TestSummariseKeepsLongErrorListsReadable(t *testing.T) {
 		}
 	}
 }
+
+// --- verifying against the hardware ---
+
+func TestExpectedCodesFromProfile(t *testing.T) {
+	p, err := LoadProfile("phasmophobia", profileDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := expectedCodes(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, code := range map[string]int{
+		"k01": 1,  // esc, inherited from default
+		"k03": 57, // space
+		"k07": 2,  // digit 1
+		"k10": 36, // j
+		"k11": 42, // leftshift
+		"bar": 20, // t
+	} {
+		if want[label] != code {
+			t.Errorf("%s: expected code %d, got %d", label, code, want[label])
+		}
+	}
+	// The keys the old .map bound to the digit zero must now expect silence.
+	for _, label := range []string{"k02", "k04", "k17", "k18", "k19"} {
+		if want[label] != 0 {
+			t.Errorf("%s should expect silence, got code %d (%s)",
+				label, want[label], codeName(want[label]))
+		}
+	}
+	if codeName(0) != silentName {
+		t.Errorf("code 0 should read as %q", silentName)
+	}
+}
+
+func TestExpectedCodesForStockLayout(t *testing.T) {
+	want, err := expectedCodes(nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) != len(layout) {
+		t.Fatalf("expected %d inputs, got %d", len(layout), len(want))
+	}
+	for _, in := range layout {
+		if want[in.Label] != keyboardKeyCodes[in.Stock] {
+			t.Errorf("%s: stock is %s (%d), got %d",
+				in.Label, in.Stock, keyboardKeyCodes[in.Stock], want[in.Label])
+		}
+	}
+}
+
+func TestExpectedCodesMarksMacrosUnverifiable(t *testing.T) {
+	p, err := LoadProfile("macros-example", profileDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := expectedCodes(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A macro is more than one keycode, so a single press cannot confirm it.
+	if want["k03"] != -1 {
+		t.Errorf("a macro binding should be marked unverifiable, got %d", want["k03"])
+	}
+	if codeName(-1) != "macro" {
+		t.Errorf("code -1 should read as macro, got %q", codeName(-1))
+	}
+}
+
+func TestEveryInputHasAVerifyPrompt(t *testing.T) {
+	for _, in := range layout {
+		if verifyPrompt[in.Label] == "" {
+			t.Errorf("%s has no prompt saying where it is", in.Label)
+		}
+	}
+}

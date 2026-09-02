@@ -249,23 +249,26 @@ generated keyd config byte-for-byte against the reference implementation in
 
 ### Checking against the real keypad
 
-`tests/verify_layout.py` is a manual check, not part of `make check`: it needs root and
-the keypad plugged in.
+`tartarus verify` walks the 25 inputs, records the keycode each physically emits, and
+compares that against the profile. It needs root, and the keypad plugged in.
 
 ```bash
-sudo python3 tests/verify_layout.py           # compare against the installed mapping
-sudo python3 tests/verify_layout.py --stock   # compare against the stock layout
-sudo python3 tests/verify_layout.py --report   # just record what each key sends
+sudo tartarus verify              # against the active profile
+sudo tartarus verify diablo4      # against a named profile
+sudo tartarus verify --stock      # against the keypad's stock layout
 ```
 
-It walks the 25 inputs, records the keycode each physically emits, and compares against
-whatever is installed — a keyd config, a udev hwdb file, or the stock layout. It is
-read-only, and grabs the keypad while running so its keys do not type into your terminal.
+It is read-only. When keyd is active it holds the keypad exclusively and re-emits through
+its own virtual device, so that is what gets read; otherwise the keypad is read directly
+and taken exclusively so its keys do not type into your terminal.
 
-This is how the layout table was confirmed: all 25 inputs matched the mapping that was
-applied at the time. It is also how to confirm that `tartarus apply` worked — after
-applying a profile, keys the profile leaves unbound should come back `silent` rather than
-sending the digit zero.
+This is how the layout table was confirmed — all 25 inputs matched the stock layout — and
+it is how to confirm `tartarus apply` worked: keys a profile leaves unbound come back
+`silent` instead of sending the digit zero.
+
+`tests/verify_layout.py` does the same thing and predates the subcommand. It is kept for
+reference, but `tartarus verify` is installed with the tool and cannot fall out of date
+with it.
 
 ## Layout
 
