@@ -92,51 +92,28 @@ func retitle(body, name string) string {
 	return "[profile]\nname = " + name + "\n\n" + body
 }
 
-// writableProfileDir picks where a new profile should live: the first directory
-// that already exists and can be written to, else the most specific candidate,
-// which is then created.
+// newProfileTarget decides where `new` writes.
 //
-// When the caller named a directory with --profiles, that instruction is
-// followed even if it is a system path. Otherwise the package's and the
-// administrator's directories are left alone.
-func writableProfileDir(dirs []string) (string, error) {
-	if len(dirs) == 0 {
-		return "", fmt.Errorf("no profile directory to write to")
-	}
-	if profilesExplicit {
-		target := dirs[0]
-		if err := os.MkdirAll(target, 0o755); err != nil {
-			return "", fmt.Errorf("cannot create %s: %w", target, err)
-		}
-		return target, nil
-	}
-	for _, dir := range dirs {
-		// Never create a profile inside the package's or the admin's directory.
-		if isSystemDir(dir) {
-			continue
-		}
-		info, err := os.Stat(dir)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-		probe, err := os.CreateTemp(dir, ".tartarus-write-check-*")
-		if err != nil {
-			continue
-		}
-		name := probe.Name()
-		_ = probe.Close()
-		_ = os.Remove(name)
-		return dir, nil
-	}
-	for _, dir := range dirs {
-		if isSystemDir(dir) {
-			continue
-		}
-		if err := os.MkdirAll(dir, 0o755); err == nil {
-			return dir, nil
+// This is deliberately not a search. Where a profile lands must not depend on
+// the current directory: a relative `profiles` directory happening to exist is
+// no reason to put someone's new profile in it.
+func newProfileTarget(dirs []string) (string, error) {
+	var target string
+	switch {
+	case profilesExplicit && len(dirs) > 0:
+		target = dirs[0] // --profiles named it
+	case os.Getenv("TARTARUS_PROFILES") != "":
+		target = os.Getenv("TARTARUS_PROFILES")
+	default:
+		var err error
+		if target, err = UserProfileDir(); err != nil {
+			return "", err
 		}
 	}
-	return "", fmt.Errorf("no writable profile directory among: %s", strings.Join(dirs, ", "))
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return "", fmt.Errorf("cannot create %s: %w", target, err)
+	}
+	return target, nil
 }
 
 // CreateProfile writes a new profile and reports where it landed.
@@ -180,7 +157,7 @@ func CreateProfile(slug, from, name string, dirs []string) (string, error) {
 		body = newProfileSkeleton(slug, name, extends)
 	}
 
-	dir, err := writableProfileDir(dirs)
+	dir, err := newProfileTarget(dirs)
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +170,10 @@ func CreateProfile(slug, from, name string, dirs []string) (string, error) {
 	}
 
 	// A profile that cannot be loaded back is worse than no profile at all.
-	if _, err := LoadProfile(slug, []string{dir}); err != nil {
+	// Validation searches the whole path, not just where the file landed: the
+	// profile it extends usually lives elsewhere, such as the packaged
+	// default.profile under /usr/share.
+	if _, err := LoadProfile(slug, append([]string{dir}, dirs...)); err != nil {
 		_ = os.Remove(path)
 		return "", fmt.Errorf("the new profile did not validate, so it was removed: %w", err)
 	}

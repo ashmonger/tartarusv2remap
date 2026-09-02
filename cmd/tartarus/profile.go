@@ -130,19 +130,17 @@ func ProfileDirs(override string) []string {
 	return dirs
 }
 
-// isSystemDir reports whether a directory belongs to the package or the
-// administrator, and so is not somewhere `new` should write.
-func isSystemDir(dir string) bool {
-	abs, err := filepath.Abs(dir)
+// UserProfileDir is where a profile is written when no directory was named.
+// Profiles belong to the person using the keypad, not to the machine.
+func UserProfileDir() (string, error) {
+	if config := os.Getenv("XDG_CONFIG_HOME"); config != "" {
+		return filepath.Join(config, "tartarus", "profiles"), nil
+	}
+	home, err := os.UserHomeDir()
 	if err != nil {
-		abs = dir
+		return "", fmt.Errorf("cannot locate your home directory: %w", err)
 	}
-	for _, prefix := range []string{"/usr/", "/etc/", "/opt/", "/var/"} {
-		if strings.HasPrefix(abs+"/", prefix) {
-			return true
-		}
-	}
-	return false
+	return filepath.Join(home, ".config", "tartarus", "profiles"), nil
 }
 
 // ListProfiles returns the slugs found across dirs, without duplicates.

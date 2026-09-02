@@ -95,6 +95,11 @@ Profiles are searched for in this order, so your own copy always shadows a packa
 3. `/etc/tartarus/profiles`
 4. `/usr/share/tartarus/profiles` (shipped by the package)
 
+`tartarus new` writes to `--profiles` if given, else `$TARTARUS_PROFILES` if set, else
+`~/.config/tartarus/profiles`. Where a new profile lands never depends on your current
+directory, and the packaged profiles are never edited in place. A profile created this
+way still resolves `extends = default` against the packaged `default.profile`.
+
 Key names, in reading order:
 
 ```

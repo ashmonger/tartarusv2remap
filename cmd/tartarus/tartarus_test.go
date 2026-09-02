@@ -312,7 +312,9 @@ func tempProfiles(t *testing.T, slugs ...string) string {
 }
 
 func TestCreateFromScratch(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := tempProfiles(t, "default")
+	t.Setenv("TARTARUS_PROFILES", dir)
 	path, err := CreateProfile("eldenring", "", "", []string{dir})
 	if err != nil {
 		t.Fatal(err)
@@ -347,7 +349,9 @@ func TestCreateFromScratch(t *testing.T) {
 }
 
 func TestCreateStandaloneWhenNoDefault(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := t.TempDir()
+	t.Setenv("TARTARUS_PROFILES", dir)
 	if _, err := CreateProfile("solo", "", "", []string{dir}); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +365,9 @@ func TestCreateStandaloneWhenNoDefault(t *testing.T) {
 }
 
 func TestCreateFromExistingProfile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := tempProfiles(t, "default", "diablo4")
+	t.Setenv("TARTARUS_PROFILES", dir)
 	if _, err := CreateProfile("bg3", "diablo4", "Baldur's Gate 3", []string{dir}); err != nil {
 		t.Fatal(err)
 	}
@@ -456,33 +462,48 @@ func TestProfileDirsIncludeSystemPaths(t *testing.T) {
 	}
 }
 
-func TestNewNeverWritesToSystemDirs(t *testing.T) {
-	for _, dir := range []string{"/usr/share/tartarus/profiles", "/etc/tartarus/profiles",
-		"/usr/local/share/tartarus", "/var/lib/tartarus", "/opt/tartarus"} {
-		if !isSystemDir(dir) {
-			t.Errorf("%s should be treated as a system directory", dir)
-		}
-	}
-	for _, dir := range []string{"/home/someone/.config/tartarus/profiles", "profiles", "./profiles"} {
-		if isSystemDir(dir) {
-			t.Errorf("%s should be writable by new", dir)
-		}
-	}
+func TestNewWritesToTheUserConfigByDefault(t *testing.T) {
+	// The regression this guards: `new` used to return the first existing
+	// writable directory in the search path, so a relative `profiles` directory
+	// in the current working directory captured the new profile.
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	t.Setenv("TARTARUS_PROFILES", "")
 
-	// Given only a system directory to work with, new must refuse rather than
-	// try to write into the package's files.
-	if _, err := CreateProfile("x", "", "", []string{SystemProfileDir}); err == nil {
-		t.Error("expected new to refuse a system-only profile path")
-	}
-
-	// With a user directory present, that is where it lands.
-	user := t.TempDir()
-	path, err := CreateProfile("mygame", "", "", []string{SystemProfileDir, user})
+	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(path) != user {
-		t.Errorf("new wrote to %s, expected it under %s", path, user)
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll("profiles", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+
+	path, err := CreateProfile("citest", "", "", ProfileDirs(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(config, "tartarus", "profiles")
+	if filepath.Dir(path) != want {
+		t.Errorf("wrote to %s, expected it under %s", path, want)
+	}
+	if _, err := os.Stat(filepath.Join("profiles", "citest.profile")); err == nil {
+		t.Error("a relative profiles directory must not capture the new profile")
+	}
+}
+
+func TestNewHonoursTartarusProfilesEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TARTARUS_PROFILES", dir)
+
+	path, err := CreateProfile("envgame", "", "", ProfileDirs(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(path) != dir {
+		t.Errorf("wrote to %s, expected it under %s", path, dir)
 	}
 }
 
@@ -512,12 +533,10 @@ func TestPackagedProfilesAllLoad(t *testing.T) {
 }
 
 func TestExplicitProfilesDirIsHonoured(t *testing.T) {
-	// Without --profiles, a system path is refused.
-	if _, err := CreateProfile("a", "", "", []string{SystemProfileDir}); err == nil {
-		t.Error("expected the implicit search path to protect system directories")
-	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TARTARUS_PROFILES", "")
 
-	// With --profiles, the caller's instruction wins.
+	// --profiles names the directory outright, even a system-looking one.
 	profilesExplicit = true
 	defer func() { profilesExplicit = false }()
 
@@ -528,5 +547,35 @@ func TestExplicitProfilesDirIsHonoured(t *testing.T) {
 	}
 	if filepath.Dir(path) != dir {
 		t.Errorf("wrote to %s, expected %s", path, dir)
+	}
+}
+
+func TestNewResolvesExtendsFromAnotherDirectory(t *testing.T) {
+	// The installed shape: default.profile is read-only under /usr/share while
+	// the new profile is written to the user's config. Validating only where
+	// the file landed would fail to find its parent and delete it.
+	packaged := tempProfiles(t, "default")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	t.Setenv("TARTARUS_PROFILES", "")
+
+	dirs := []string{filepath.Join(config, "tartarus", "profiles"), packaged}
+	path, err := CreateProfile("eldenring", "", "", dirs)
+	if err != nil {
+		t.Fatalf("a new profile must resolve a parent from elsewhere on the path: %v", err)
+	}
+	if filepath.Dir(path) == packaged {
+		t.Errorf("wrote into the packaged directory: %s", path)
+	}
+
+	p, err := LoadProfile("eldenring", dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Extends != "default" {
+		t.Errorf("expected the new profile to extend the packaged default, got %q", p.Extends)
+	}
+	if p.Bindings["k01"] != "esc" {
+		t.Errorf("packaged default's bindings were not inherited: %v", p.Bindings)
 	}
 }
