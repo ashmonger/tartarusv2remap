@@ -3,6 +3,8 @@ name = Phasmophobia
 extends = default
 
 [keys]
+k03 = space        # in the live config, absent from the old committed .map
+k05 = space        # likewise
 k06 = esc
 k07 = 1
 k08 = 2
