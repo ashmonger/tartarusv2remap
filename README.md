@@ -266,10 +266,21 @@ This is how the layout table was confirmed — all 25 inputs matched the stock l
 it is how to confirm `tartarus apply` worked: keys a profile leaves unbound come back
 `silent` instead of sending the digit zero.
 
-If `verify` registers nothing, `tartarus devices` says what it can see, which device it
-would read, and whether something else is holding each one — keyd's ownership shows up
-there as "held by another process". `--device PATH` reads a named device instead of
-guessing.
+If `verify` registers nothing, work down this list:
+
+```bash
+sudo tartarus devices                 # what is there, what verify would read
+sudo tartarus verify --watch 10        # print every key seen, checking nothing
+sudo tartarus verify --device /dev/input/eventN --timeout 3
+```
+
+`devices` also probes whether something else holds each device — keyd's ownership shows up
+as "held by another process". Run it under sudo: keyd's virtual devices do not get the
+seat ACLs the keypad's own interfaces have, so an unprivileged run reports them as
+unreadable whether or not they are usable.
+
+`--watch` is the quickest way to tell a wrong device from a wrong expectation: it answers
+whether anything is readable at all, without prompting for 25 keys first.
 
 `tests/verify_layout.py` does the same thing and predates the subcommand. It is kept for
 reference, but `tartarus verify` is installed with the tool and cannot fall out of date

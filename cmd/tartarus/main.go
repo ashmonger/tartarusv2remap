@@ -38,6 +38,7 @@ flags:
   --stock           for verify: compare against the keypad's stock layout
   --timeout SECS    for verify: seconds to wait per key (default 8)
   --device PATH     for verify: read this event device instead of guessing
+  --watch SECS      for verify: print every key seen for SECS, checking nothing
 
 examples:
   tartarus new eldenring                 a fresh profile, extending default
@@ -55,6 +56,7 @@ var (
 	verifyStock      bool
 	verifyTimeout    float64
 	verifyDevice     string
+	verifyWatch      int
 )
 
 func main() {
@@ -76,6 +78,7 @@ func main() {
 	fs.BoolVar(&verifyStock, "stock", false, "for verify: compare against the stock layout")
 	fs.Float64Var(&verifyTimeout, "timeout", 8, "for verify: seconds to wait per key")
 	fs.StringVar(&verifyDevice, "device", "", "for verify: read this event device")
+	fs.IntVar(&verifyWatch, "watch", 0, "for verify: just print keys seen for N seconds")
 
 	// Parse repeatedly, peeling off one positional at a time, so a flag is
 	// honoured wherever it appears: `new bg3 --from diablo4` reads the same as

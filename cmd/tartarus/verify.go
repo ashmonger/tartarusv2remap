@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -182,6 +183,10 @@ func cmdVerify(arg string, dirs []string, stock bool, perKey time.Duration) erro
 		return err
 	}
 
+	if verifyWatch > 0 {
+		return watchKeys(devices, !viaKeyd, verifyWatch)
+	}
+
 	fmt.Printf("Razer Tartarus V2 check — comparing against %s\n\n", comparing)
 	for _, d := range devices {
 		fmt.Printf("  %s  %s\n", d.Path, d.Name)
@@ -233,14 +238,64 @@ func cmdVerify(arg string, dirs []string, stock bool, perKey time.Duration) erro
 }
 
 func verifyFlags(arg string, stock bool) []string {
+	// Everything that changes what verify does has to survive the sudo re-exec,
+	// or the elevated run quietly does something else.
 	var flags []string
+	if dir := os.Getenv("TARTARUS_PROFILES"); dir != "" {
+		flags = append(flags, "--profiles", dir)
+	}
 	if stock {
 		flags = append(flags, "--stock")
+	}
+	if verifyDevice != "" {
+		flags = append(flags, "--device", verifyDevice)
+	}
+	if verifyTimeout != 8 {
+		flags = append(flags, "--timeout", strconv.FormatFloat(verifyTimeout, 'f', -1, 64))
+	}
+	if verifyWatch > 0 {
+		flags = append(flags, "--watch", strconv.Itoa(verifyWatch))
 	}
 	if arg != "" {
 		flags = append(flags, arg)
 	}
 	return flags
+}
+
+// watchKeys prints every key press it sees, and nothing else. It answers the
+// one question a failing verify cannot: is anything readable from this device?
+func watchKeys(devices []inputDevice, grab bool, seconds int) error {
+	fmt.Printf("listening on:\n")
+	for _, d := range devices {
+		fmt.Printf("  %s  %s\n", d.Path, d.Name)
+	}
+	fmt.Printf("\nPress keys for %ds. Anything that arrives is printed.\n\n", seconds)
+
+	reader, err := openReader(devices, grab)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
+	seen := 0
+	for time.Now().Before(deadline) {
+		code, ok := reader.Next(time.Until(deadline))
+		if !ok {
+			break
+		}
+		seen++
+		fmt.Printf("  %-4d %s\n", code, codeName(int(code)))
+	}
+	fmt.Println()
+	if seen == 0 {
+		return fmt.Errorf(
+			"nothing arrived in %ds. Either no key was pressed, or this device "+
+				"carries no key events — try another path from `tartarus devices`",
+			seconds)
+	}
+	fmt.Printf("%d key press(es) seen\n", seen)
+	return nil
 }
 
 // verifyPrompt says where each input physically is.
