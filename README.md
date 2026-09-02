@@ -57,6 +57,26 @@ tartarus keys shift             # search the 138 bindable keyboard keys
 tartarus --dry-run apply hd2    # exactly what apply would write and run
 ```
 
+### keyd versions
+
+`[ids]` is written as a bare `1532:022b`, which every keyd version accepts. The keypad
+exposes several interfaces under that one id — two keyboard interfaces, only one of which
+emits its keys, plus a mouse interface carrying the scroll wheel. If your keyd supports a
+narrower syntax you can set it per profile:
+
+```ini
+[profile]
+device = k:1532:022b          # keyboards only
+device = 1532:022b:fab63040   # one specific interface, keyd 2.5 and later
+```
+
+`keyd monitor` prints the three-part ids for the machine it runs on. Whatever `device`
+says is passed through unchanged.
+
+`tartarus apply` runs `keyd check` before loading a config, but that subcommand was added
+part-way through keyd's history; where it is missing, the step is skipped with a note and
+a failed `keyd reload` still restores the previous config.
+
 Only `apply` and `off` need root, and they re-run under `sudo` after the profile has
 compiled, so a mistake never costs a password prompt. `--dry-run` never escalates.
 

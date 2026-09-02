@@ -314,20 +314,9 @@ def header(profile: Profile, backend: str) -> list[str]:
     ]
 
 
-def keyd_device_id(device: str) -> str:
-    """Limit keyd to the keypad's keyboard interfaces.
-
-    The keypad exposes two keyboard interfaces and a mouse interface (the
-    scroll wheel) under one vendor:product, and keyd matches on vendor:product.
-    """
-    if device.startswith(("k:", "m:", "-")) or device == "*":
-        return device
-    return "k:" + device
-
-
 def render_keyd(profile: Profile) -> str:
     lines = header(profile, "keyd")
-    lines += ["[ids]", keyd_device_id(profile.device), "", "[main]"]
+    lines += ["[ids]", profile.device, "", "[main]"]
     targets = {}
     for label in LABELS:
         value = profile.bindings.get(label)
