@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.23"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
+
+      # The key table in layout.go is generated from this header, and the suite
+      # checks it has not drifted.
+      - name: Install the kernel header the key table is generated from
+        run: sudo apt-get update && sudo apt-get install -y linux-libc-dev
+
+      - name: gofmt
+        run: |
+          if [ -n "$(gofmt -l cmd)" ]; then
+            echo "these files need gofmt:"
+            gofmt -l cmd
+            gofmt -d cmd
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+
+      # The whole offline suite: unit tests, the editor driven through a pty,
+      # the key-table check, and the byte-for-byte cross-check against the
+      # reference implementation. No keypad, no root, no keyd daemon.
+      - name: Offline suite
+        run: make check
+
+  build:
+    name: Build ${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            debarch: amd64
+          - goarch: arm64
+            debarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          make build
+          file tartarus
+
+      - name: Check the binary is static
+        run: |
+          # A dynamic binary would add runtime dependencies the package does
+          # not declare.
+          if file tartarus | grep -q "dynamically linked"; then
+            echo "the binary is dynamically linked; the package declares no dependencies"
+            exit 1
+          fi
+
+      - name: Smoke test the binary
+        if: matrix.goarch == 'amd64'
+        run: |
+          export TARTARUS_PROFILES="$PWD/profiles"
+          ./tartarus --help
+          ./tartarus list
+          ./tartarus check
+          ./tartarus compile diablo4
+          ./tartarus --dry-run apply diablo4
+
+      - name: Build the Debian package
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: make deb ARCH=${{ matrix.debarch }}
+
+      - name: Verify the package contents
+        run: |
+          deb=$(ls build/*.deb)
+          echo "== $deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb"
+
+          root=$(mktemp -d)
+          dpkg-deb --extract "$deb" "$root"
+          dpkg-deb --control "$deb" "$root/DEBIAN"
+
+          # Everything shipped must match its recorded checksum.
+          ( cd "$root" && md5sum -c DEBIAN/md5sums --quiet )
+
+          # The binary and the profiles must be where the tool looks for them.
+          test -x "$root/usr/bin/tartarus"
+          test -f "$root/usr/share/tartarus/profiles/default.profile"
+          for p in diablo4 hd2 nms phasmophobia shapeofdreams; do
+            test -f "$root/usr/share/tartarus/profiles/$p.profile"
+          done
+          test -f "$root/usr/share/doc/tartarus-remap/copyright"
+          test -f "$root/usr/share/doc/tartarus-remap/changelog.Debian.gz"
+
+      - name: Install the package and use it
+        if: matrix.debarch == 'amd64'
+        run: |
+          sudo apt-get install -y ./build/*.deb
+          # No TARTARUS_PROFILES: this proves the installed binary finds the
+          # profiles the package shipped.
+          tartarus list
+          tartarus show diablo4
+          tartarus compile hd2
+          tartarus status
+          # A fresh profile must land in the user's config, never in the
+          # package's directory.
+          tartarus new citest --no-edit
+          test -f "$HOME/.config/tartarus/profiles/citest.profile"
+          ! test -f /usr/share/tartarus/profiles/citest.profile
+          tartarus list | grep citest
+          sudo apt-get remove -y tartarus-remap
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tartarus-${{ matrix.debarch }}
+          path: |
+            build/*.deb
+            tartarus
+          if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish the packages
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.deb
+          generate_release_notes: true
