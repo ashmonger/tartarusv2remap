@@ -1,0 +1,15 @@
+#!/bin/sh
+# Point the user at what they need, without touching their configuration.
+set -e
+
+case "$1" in
+    configure)
+        if ! command -v keyd >/dev/null 2>&1; then
+            echo "tartarus: keyd is not installed. Profiles can be written and"
+            echo "          inspected, but 'tartarus apply' needs it:"
+            echo "            apt install keyd"
+        fi
+        ;;
+esac
+
+exit 0

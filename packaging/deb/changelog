@@ -1,0 +1,9 @@
+tartarus-remap (0.1.0-1) unstable; urgency=low
+
+  * Initial release.
+  * Per-game profiles naming the keypad's physical keys instead of HID
+    scancodes, with inheritance through `extends`.
+  * Terminal keypad editor, macros, and explicit unbinding.
+  * Applies profiles through keyd rather than the udev hardware database.
+
+ -- Jeremy Collin <jeremy.collin@ovhcloud.com>  Wed, 02 Sep 2026 00:00:00 +0000
