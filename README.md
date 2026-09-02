@@ -158,6 +158,26 @@ generated key table still matches `linux/input-event-codes.h`, and cross-checks 
 generated keyd config byte-for-byte against the reference implementation in
 `tests/oracle/tartarus.py`.
 
+### Checking against the real keypad
+
+`tests/verify_layout.py` is a manual check, not part of `make check`: it needs root and
+the keypad plugged in.
+
+```bash
+sudo python3 tests/verify_layout.py           # compare against the installed mapping
+sudo python3 tests/verify_layout.py --stock   # compare against the stock layout
+sudo python3 tests/verify_layout.py --report   # just record what each key sends
+```
+
+It walks the 25 inputs, records the keycode each physically emits, and compares against
+whatever is installed — a keyd config, a udev hwdb file, or the stock layout. It is
+read-only, and grabs the keypad while running so its keys do not type into your terminal.
+
+This is how the layout table was confirmed: all 25 inputs matched the mapping that was
+applied at the time. It is also how to confirm that `tartarus apply` worked — after
+applying a profile, keys the profile leaves unbound should come back `silent` rather than
+sending the digit zero.
+
 ## Layout
 
 ```
