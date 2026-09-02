@@ -266,6 +266,11 @@ This is how the layout table was confirmed — all 25 inputs matched the stock l
 it is how to confirm `tartarus apply` worked: keys a profile leaves unbound come back
 `silent` instead of sending the digit zero.
 
+If `verify` registers nothing, `tartarus devices` says what it can see, which device it
+would read, and whether something else is holding each one — keyd's ownership shows up
+there as "held by another process". `--device PATH` reads a named device instead of
+guessing.
+
 `tests/verify_layout.py` does the same thing and predates the subcommand. It is kept for
 reference, but `tartarus verify` is installed with the tool and cannot fall out of date
 with it.

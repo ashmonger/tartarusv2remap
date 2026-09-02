@@ -164,8 +164,18 @@ func cmdVerify(arg string, dirs []string, stock bool, perKey time.Duration) erro
 	}
 
 	devices := keypadDevices(defaultDevice)
-	if viaKeyd {
+	switch {
+	case verifyDevice != "":
+		devices = []inputDevice{{Path: verifyDevice, Name: "named with --device"}}
+		viaKeyd = true // a named device is read as-is, never grabbed
+	case viaKeyd:
 		devices = []inputDevice{*virtual}
+	case !stock && ActiveProfile() != "":
+		return fmt.Errorf(
+			"profile %q is active, so keyd holds the keypad and its output comes from\n"+
+				"keyd's own device, which was not recognised. Run `tartarus devices` to\n"+
+				"see what is there, then pass --device with the right path",
+			ActiveProfile())
 	}
 
 	if err := Elevate(append([]string{"verify"}, verifyFlags(arg, stock)...)); err != nil {
@@ -249,4 +259,62 @@ var verifyPrompt = map[string]string{
 	"pad_left":  "thumb pad: push LEFT",
 	"pad_right": "thumb pad: push RIGHT",
 	"bar":       "the big bar under your thumb",
+}
+
+// cmdDevices reports what verify can see and what it would read. Guessing which
+// device carries the keys has been the single biggest source of wrong answers
+// here, so it is worth being able to ask.
+func cmdDevices() error {
+	fmt.Println("keypad interfaces:")
+	pads := keypadDevices(defaultDevice)
+	if len(pads) == 0 {
+		fmt.Printf("  none matching %s — is it plugged in?\n", defaultDevice)
+	}
+	for _, d := range pads {
+		fmt.Printf("  %-20s %-34s %s\n", d.Path, d.Name, openness(d.Path))
+	}
+
+	fmt.Println("\nkeyd devices:")
+	keydDevs := inputDevices(func(_, name string) bool {
+		return strings.Contains(strings.ToLower(name), "keyd")
+	})
+	if len(keydDevs) == 0 {
+		fmt.Println("  none — keyd creates these only while it is running")
+	}
+	for _, d := range keydDevs {
+		fmt.Printf("  %-20s %-34s %s\n", d.Path, d.Name, openness(d.Path))
+	}
+
+	fmt.Println()
+	active := ActiveProfile()
+	virtual := keydVirtualDevice()
+	switch {
+	case active != "" && virtual != nil:
+		fmt.Printf("verify would read %s (%s)\n", virtual.Path, virtual.Name)
+		fmt.Printf("  because profile %q is active, so keyd owns the keypad\n", active)
+	case active != "":
+		fmt.Println("verify would read the keypad directly, and would find nothing:")
+		fmt.Printf("  profile %q is active, so keyd holds the keypad, but no keyd\n", active)
+		fmt.Println("  virtual keyboard was recognised. Pass --device with the path of")
+		fmt.Println("  keyd's output device from the list above.")
+	default:
+		fmt.Println("verify would read the keypad directly and take it exclusively")
+		fmt.Println("  because no profile is active")
+	}
+	return nil
+}
+
+// openness says whether the device can be read and whether something else holds
+// it, which is how keyd's ownership shows up.
+func openness(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return "cannot open: " + err.Error()
+	}
+	defer file.Close()
+	if err := ioctlGrab(file, 1); err != nil {
+		return "held by another process (keyd, most likely)"
+	}
+	_ = ioctlGrab(file, 0)
+	return "readable, not held"
 }
