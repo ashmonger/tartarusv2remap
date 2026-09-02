@@ -23,6 +23,7 @@ usage: tartarus [flags] <command> [profile]
   status            print the active profile
   check             validate every profile
   keys [PATTERN]    list the keyboard keys a profile may use
+  import FILE.map   convert an old udev .map file into a profile
 
 flags:
   --profiles DIR    directory holding *.profile files
@@ -133,6 +134,8 @@ func run(args []string, dirs []string, dryRun bool) error {
 		return cmdCheck(dirs)
 	case "keys":
 		return cmdKeys(arg)
+	case "import":
+		return cmdImport(arg)
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
@@ -347,6 +350,21 @@ func unknownValues(p *Profile) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func cmdImport(path string) error {
+	if path == "" {
+		return fmt.Errorf("import needs a path to a .map file")
+	}
+	profile, notes, err := ImportMap(path)
+	if err != nil {
+		return err
+	}
+	for _, note := range notes {
+		fmt.Fprintln(os.Stderr, "note: "+note)
+	}
+	fmt.Print(profile)
+	return nil
 }
 
 func cmdKeys(pattern string) error {

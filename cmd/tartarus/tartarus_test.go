@@ -90,8 +90,8 @@ func TestRenderKeydBindsEveryInput(t *testing.T) {
 	if got := strings.Count(out, " = "); got != 25 {
 		t.Errorf("expected 25 bindings in the config, got %d", got)
 	}
-	if !strings.Contains(out, "[ids]\nk:1532:022b") {
-		t.Error("config does not claim the keypad's keyboard interfaces")
+	if !strings.Contains(out, "[ids]\n1532:022b") {
+		t.Error("config does not claim the keypad")
 	}
 	if !strings.Contains(out, "noop") {
 		t.Error("unbound keys should compile to noop")
@@ -580,10 +580,9 @@ func TestNewResolvesExtendsFromAnotherDirectory(t *testing.T) {
 	}
 }
 
-func TestKeydClaimsOnlyKeyboardInterfaces(t *testing.T) {
-	// Observed on hardware: the keypad exposes two keyboard interfaces and a
-	// mouse interface carrying the scroll wheel, all under 1532:022b. A bare
-	// id would hand keyd the mouse as well.
+func TestKeydUsesABareDeviceIDByDefault(t *testing.T) {
+	// A bare vendor:product is accepted by every keyd version. The `k:` prefix
+	// is not in keyd's changelog, so it is not assumed.
 	p, err := LoadProfile("diablo4", profileDir(t))
 	if err != nil {
 		t.Fatal(err)
@@ -592,19 +591,135 @@ func TestKeydClaimsOnlyKeyboardInterfaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "[ids]\nk:1532:022b") {
-		t.Errorf("expected the id to be limited to keyboards:\n%s", out)
+	if !strings.Contains(out, "[ids]\n1532:022b\n") {
+		t.Errorf("expected a bare device id:\n%s", out)
 	}
 
-	for _, tc := range []struct{ in, want string }{
-		{"1532:022b", "k:1532:022b"},
-		{"k:1532:022b", "k:1532:022b"}, // already restricted, leave alone
-		{"m:1532:022b", "m:1532:022b"},
-		{"*", "*"},
-		{"-1532:022b", "-1532:022b"}, // an exclusion
-	} {
-		if got := keydDeviceID(tc.in); got != tc.want {
-			t.Errorf("keydDeviceID(%q) = %q, want %q", tc.in, got, tc.want)
+	// A profile may narrow it, and whatever it says is passed through.
+	for _, id := range []string{"k:1532:022b", "1532:022b:fab63040", "*"} {
+		p.Device = id
+		out, err := RenderKeyd(p)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if !strings.Contains(out, "[ids]\n"+id+"\n") {
+			t.Errorf("device %q was not passed through:\n%s", id, out)
+		}
+	}
+}
+
+// --- importing old .map files ---
+
+// parseMap reads an hwdb .map into scancode -> value.
+func parseMap(t *testing.T, path string) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "KEYBOARD_KEY_") {
+			continue
+		}
+		prop, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		out[strings.ToLower(strings.TrimPrefix(prop, "KEYBOARD_KEY_"))] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+func TestImportIsFaithfulToTheMapFiles(t *testing.T) {
+	root := repoRoot(t)
+	maps, err := filepath.Glob(filepath.Join(root, "config", "tartarus", "*.map"))
+	if err != nil || len(maps) == 0 {
+		t.Skip("no .map files to import")
+	}
+
+	for _, mapPath := range maps {
+		slug := strings.TrimSuffix(filepath.Base(mapPath), ".map")
+		t.Run(slug, func(t *testing.T) {
+			text, _, err := ImportMap(mapPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, slug+profileSuffix), []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			p, err := LoadProfile(slug, []string{dir})
+			if err != nil {
+				t.Fatalf("imported profile does not load: %v", err)
+			}
+			out, err := RenderKeyd(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// stock key name -> what the generated config binds it to
+			bound := map[string]string{}
+			for _, line := range strings.Split(out, "\n") {
+				line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+				if line == "" || strings.HasPrefix(line, "[") {
+					continue
+				}
+				if k, v, found := strings.Cut(line, "="); found {
+					bound[strings.TrimSpace(k)] = strings.TrimSpace(v)
+				}
+			}
+
+			original := parseMap(t, mapPath)
+			repaired := 0
+			for _, in := range layout {
+				want := original[in.Scancode]
+				got := bound[in.Stock]
+				// The one intended difference: a key written `0` or left empty
+				// meant "unbound" but sent the digit zero. It is now noop.
+				if want == "0" || want == "" {
+					if got != "noop" {
+						t.Errorf("%s: expected the broken unbind to become noop, got %q", in.Label, got)
+					}
+					repaired++
+					continue
+				}
+				// keyd spells a few keys differently from the kernel, so the
+				// comparison is against keyd's name for the .map's value.
+				if keydName(want) != got {
+					t.Errorf("%s (%s): .map says %q (keyd: %q), generated config says %q",
+						in.Label, in.Scancode, want, keydName(want), got)
+				}
+			}
+			if repaired == 0 {
+				t.Logf("%s had no broken unbinds", slug)
+			} else {
+				t.Logf("%s: %d broken unbinds repaired", slug, repaired)
+			}
+		})
+	}
+}
+
+func TestImportReadsTheDeviceFromTheMatchLine(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"evdev:input:b0003v1532p022B*", "1532:022b"},
+		{"evdev:input:b0003v046DpC52B*", "046d:c52b"},
+		{"nonsense", ""},
+	} {
+		if got := deviceFromModalias(tc.in); got != tc.want {
+			t.Errorf("deviceFromModalias(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestImportRejectsAFileWithNoBindings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.map")
+	if err := os.WriteFile(path, []byte("# just a comment\nevdev:input:b0003v1532p022B*\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ImportMap(path); err == nil {
+		t.Error("expected an error for a .map with no KEYBOARD_KEY_ lines")
 	}
 }
