@@ -122,12 +122,25 @@ func ProfileDirs(override string) []string {
 		dirs = append(dirs, filepath.Join(config, "tartarus", "profiles"))
 		dirs = append(dirs, filepath.Join(config, "tartarus"))
 	}
-	// Running from a build tree, before anything is installed.
+	// Running from a build tree, before anything is installed. An installed
+	// binary sits in a bin directory, where a profiles/ subdirectory would be
+	// nonsense, so it is not looked for there.
 	if exe, err := os.Executable(); err == nil {
-		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "profiles"))
+		if dir := filepath.Dir(exe); !isBinDir(dir) {
+			dirs = append(dirs, filepath.Join(dir, "profiles"))
+		}
 	}
 	dirs = append(dirs, AdminProfileDir, SystemProfileDir, "profiles")
 	return dedupe(dirs)
+}
+
+// isBinDir reports whether a directory is one binaries are installed into.
+func isBinDir(dir string) bool {
+	switch filepath.Clean(dir) {
+	case "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin":
+		return true
+	}
+	return false
 }
 
 // dedupe drops repeated directories, which happen easily: running from a build

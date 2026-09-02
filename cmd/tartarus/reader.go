@@ -18,7 +18,7 @@ type eventReader struct {
 	files      []*os.File
 	grabbed    []*os.File
 	events     chan uint16
-	tty        *os.File
+	ttyFD      int
 	ttyRestore func()
 }
 
@@ -116,8 +116,13 @@ func (r *eventReader) Drain() {
 	}
 }
 
-// quietenTerminal stops keypresses echoing and being buffered for the shell.
-// ISIG is left alone, so Ctrl-C still interrupts.
+// quietenTerminal stops keypresses echoing and reaching the shell.
+//
+// The keys being read are not grabbed here, so they also land in the terminal.
+// Rather than reading them back — which cannot be done safely, because Go's
+// runtime puts a character device on its poller and a "non-blocking" Read on it
+// waits for input instead of returning EAGAIN — the terminal's input queue is
+// discarded outright. ISIG is left alone, so Ctrl-C still interrupts.
 func (r *eventReader) quietenTerminal() {
 	if err := exec.Command("stty", "-F", "/dev/tty", "-echo", "-icanon").Run(); err != nil {
 		return
@@ -125,21 +130,26 @@ func (r *eventReader) quietenTerminal() {
 	r.ttyRestore = func() {
 		_ = exec.Command("stty", "-F", "/dev/tty", "echo", "icanon").Run()
 	}
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
-		r.tty = tty
+	// A bare descriptor, never read from: only handed to an ioctl.
+	if fd, err := syscall.Open("/dev/tty", syscall.O_RDONLY|syscall.O_NOCTTY, 0); err == nil {
+		r.ttyFD = fd
+	} else {
+		r.ttyFD = -1
 	}
 }
 
+// tcflsh with TCIFLUSH discards whatever is queued for reading. It returns
+// immediately and cannot block, which a read loop could.
+const (
+	tcflsh   = 0x540B
+	tciflush = 0
+)
+
 func (r *eventReader) drainTerminal() {
-	if r.tty == nil {
+	if r.ttyFD <= 0 {
 		return
 	}
-	buffer := make([]byte, 256)
-	for {
-		if n, err := r.tty.Read(buffer); err != nil || n == 0 {
-			return
-		}
-	}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, uintptr(r.ttyFD), tcflsh, tciflush)
 }
 
 func (r *eventReader) Close() {
@@ -149,9 +159,9 @@ func (r *eventReader) Close() {
 	for _, file := range r.files {
 		_ = file.Close()
 	}
-	if r.tty != nil {
+	if r.ttyFD > 0 {
 		r.drainTerminal()
-		_ = r.tty.Close()
+		_ = syscall.Close(r.ttyFD)
 	}
 	if r.ttyRestore != nil {
 		r.ttyRestore()

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // repoRoot walks up from the test's working directory to the module root, so
@@ -843,6 +844,57 @@ func TestEveryInputHasAVerifyPrompt(t *testing.T) {
 	for _, in := range layout {
 		if verifyPrompt[in.Label] == "" {
 			t.Errorf("%s has no prompt saying where it is", in.Label)
+		}
+	}
+}
+
+func TestReaderNeverBlocksPastItsTimeout(t *testing.T) {
+	// verify hung on the first key because draining the terminal blocked. These
+	// guard the two places that could wait forever.
+	r := &eventReader{events: make(chan uint16, 4), ttyFD: -1}
+
+	start := time.Now()
+	if _, ok := r.Next(50 * time.Millisecond); ok {
+		t.Error("expected no key from an empty stream")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("Next waited %s past a 50ms timeout", elapsed)
+	}
+
+	start = time.Now()
+	r.Drain()
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("Drain took %s with nothing to drain", elapsed)
+	}
+
+	// A queued press is returned, and the queue is left empty afterwards.
+	r.events <- 30
+	if code, ok := r.Next(time.Second); !ok || code != 30 {
+		t.Errorf("expected keycode 30, got %d (ok=%v)", code, ok)
+	}
+	r.events <- 31
+	r.Drain()
+	if _, ok := r.Next(50 * time.Millisecond); ok {
+		t.Error("Drain left a press queued")
+	}
+}
+
+func TestInstalledBinaryDoesNotLookBesideItself(t *testing.T) {
+	// An installed binary reported /usr/bin/profiles in its search path, which
+	// can never exist and only clutters `tartarus version`.
+	for _, dir := range []string{"/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin"} {
+		if !isBinDir(dir) {
+			t.Errorf("%s should be recognised as a bin directory", dir)
+		}
+	}
+	for _, dir := range []string{"/home/someone/src/tartarus", "/opt/tartarus", "."} {
+		if isBinDir(dir) {
+			t.Errorf("%s is not a bin directory", dir)
+		}
+	}
+	for _, dir := range ProfileDirs("") {
+		if isBinDir(filepath.Dir(dir)) && filepath.Base(dir) == "profiles" {
+			t.Errorf("search path still includes %s", dir)
 		}
 	}
 }
