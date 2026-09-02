@@ -23,8 +23,11 @@ make build >/dev/null ; ok $?
 
 step "version reports the build"
 v=0
-./tartarus version | grep -q '^tartarus ' || v=1
-./tartarus version | grep -q 'commit ' || v=1
+# Captured, not piped: `grep -q` closes the pipe on its first match, and with
+# pipefail the SIGPIPE that gives the writer fails the whole pipeline.
+out=$(./tartarus version) || v=1
+grep -q '^tartarus ' <<<"$out" || v=1
+grep -q 'commit '    <<<"$out" || v=1
 ./tartarus --version >/dev/null 2>&1 || v=1
 ok $v
 
