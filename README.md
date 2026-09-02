@@ -282,9 +282,10 @@ unreadable whether or not they are usable.
 `--watch` is the quickest way to tell a wrong device from a wrong expectation: it answers
 whether anything is readable at all, without prompting for 25 keys first.
 
-`tests/verify_layout.py` does the same thing and predates the subcommand. It is kept for
-reference, but `tartarus verify` is installed with the tool and cannot fall out of date
-with it.
+A standalone script used to do this before the subcommand existed. It was removed: copying
+it between machines meant an older copy was sometimes the one that ran, and it reported a
+working mapping as broken three separate times. `tartarus verify` ships with the tool, so
+it cannot fall out of step with it.
 
 ## Layout
 
@@ -300,9 +301,22 @@ config/tartarus/     the original .map files (superseded, kept for now)
 
 ## Status
 
-The tool is not yet validated against real hardware. `keyd check` and `keyd reload` are
-invoked but have not been observed succeeding on a keypad, and the original shell script
-and `.map` files are deliberately left in place until it has been.
+Verified against a Razer Tartarus V2 running keyd 2.5.0:
+
+- All 25 inputs match the stock layout, which confirms the physical-key table every
+  profile depends on.
+- `tartarus apply` loads a profile through keyd, and `tartarus verify` then matches all 25
+  inputs against it — including the keys the profile leaves unbound, which now send
+  nothing where the old `.map` files made them type a zero.
+
+The original `bin/tartarus.sh` and `config/tartarus/*.map` are still here. They are
+superseded and can go whenever you like; they were kept until the replacement had been
+shown to work on hardware, which it now has.
+
+One caveat carried over: `config/tartarus/phasmophobia.map` was found to lag the mapping
+actually in use by two bindings. The other `.map` files were migrated from the same
+committed copies, so they are worth checking against the live ones with
+`tartarus import`.
 
 ## License
 
