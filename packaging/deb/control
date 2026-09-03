@@ -1,0 +1,25 @@
+Package: tartarus-remap
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Jeremy Collin <jeremy.collin@ovhcloud.com>
+Section: utils
+Priority: optional
+Homepage: https://github.com/ashmonger/tartarusv2remap
+Recommends: keyd
+Installed-Size: @INSTALLED_SIZE@
+Description: Per-game key remapping for the Razer Tartarus V2 keypad
+ tartarus remaps the keys of a Razer Tartarus V2 gaming keypad on a
+ per-game basis. Profiles name the keypad's physical keys rather than HID
+ scancodes, and are compiled into a keyd configuration and applied without
+ rebuilding the udev hardware database.
+ .
+ It includes a terminal editor that draws the keypad, so bindings can be
+ changed by moving over the key and pressing the one it should send.
+ .
+ Profiles for several games are installed under
+ /usr/share/tartarus/profiles and are used as read-only defaults; copies in
+ ~/.config/tartarus/profiles take precedence.
+ .
+ Applying a profile requires keyd, which is recommended rather than
+ depended upon so the package remains installable where keyd is not
+ available.

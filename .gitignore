@@ -1,0 +1,6 @@
+# build artifacts
+/tartarus
+/build/
+
+# python bytecode from the test helpers
+__pycache__/
